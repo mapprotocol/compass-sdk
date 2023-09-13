@@ -1,4 +1,4 @@
-package matic
+package bsc
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"math/big"
 )
 
-type BlockHeader struct {
+type Header struct {
 	ParentHash       []byte         `json:"parentHash"`
 	Sha3Uncles       []byte         `json:"sha3Uncles"`
 	Miner            common.Address `json:"miner"`
@@ -33,7 +33,7 @@ type BlockHeader struct {
 	BaseFeePerGas    *big.Int       `json:"baseFeePerGas"`
 }
 
-func ConvertHeader(header *types.Header) BlockHeader {
+func ConvertHeader(header types.Header) Header {
 	bloom := make([]byte, 0, len(header.Bloom))
 	for _, b := range header.Bloom {
 		bloom = append(bloom, b)
@@ -42,10 +42,13 @@ func ConvertHeader(header *types.Header) BlockHeader {
 	for _, b := range header.Nonce {
 		nonce = append(nonce, b)
 	}
-	return BlockHeader{
+	if header.BaseFee == nil {
+		header.BaseFee = new(big.Int)
+	}
+	return Header{
 		ParentHash:       hashToByte(header.ParentHash),
 		Sha3Uncles:       hashToByte(header.UncleHash),
-		Miner:            constant.ZeroAddress,
+		Miner:            header.Coinbase,
 		StateRoot:        hashToByte(header.Root),
 		TransactionsRoot: hashToByte(header.TxHash),
 		ReceiptsRoot:     hashToByte(header.ReceiptHash),
@@ -71,7 +74,7 @@ func hashToByte(h common.Hash) []byte {
 }
 
 type ProofData struct {
-	Headers      []BlockHeader
+	Headers      []Header
 	ReceiptProof ReceiptProof
 }
 
@@ -91,29 +94,31 @@ func GetProof(client *ethclient.Client, latestBlock *big.Int, log *types.Log, me
 		return nil, fmt.Errorf("unable to get receipts hashes Logs: %w", err)
 	}
 
-	headers := make([]*types.Header, constant.ConfirmsOfMatic.Int64())
-	for i := 0; i < int(constant.ConfirmsOfMatic.Int64()); i++ {
+	headers := make([]types.Header, constant.HeaderCountOfBsc)
+	for i := 0; i < constant.HeaderCountOfBsc; i++ {
 		headerHeight := new(big.Int).Add(latestBlock, new(big.Int).SetInt64(int64(i)))
-		tmp, err := client.HeaderByNumber(context.Background(), headerHeight)
+		header, err := client.HeaderByNumber(context.Background(), headerHeight)
 		if err != nil {
-			return nil, fmt.Errorf("getHeader failed, err is %v", err)
+			return nil, err
 		}
-		headers[i] = tmp
+		headers[i] = *header
 	}
 
-	mHeaders := make([]BlockHeader, 0, len(headers))
+	params := make([]Header, 0, len(headers))
 	for _, h := range headers {
-		mHeaders = append(mHeaders, ConvertHeader(h))
+		params = append(params, ConvertHeader(h))
 	}
-	return AssembleProof(mHeaders, *log, fId, receipts, method)
+	return AssembleProof(params, *log, receipts, method, fId)
 }
 
-func AssembleProof(headers []BlockHeader, log types.Log, fId constant.ChainId, receipts []*types.Receipt, method string) ([]byte, error) {
+func AssembleProof(header []Header, log types.Log, receipts []*types.Receipt, method string, fId constant.ChainId) ([]byte, error) {
 	txIndex := log.TxIndex
 	receipt, err := mapprotocol.GetTxReceipt(receipts[txIndex])
 	if err != nil {
 		return nil, err
 	}
+
+	//r := types.Receipts
 
 	prf, err := proof.GetByReceipt(receipts, txIndex)
 	if err != nil {
@@ -125,7 +130,7 @@ func AssembleProof(headers []BlockHeader, log types.Log, fId constant.ChainId, r
 	ek := utils.Key2Hex(key, len(prf))
 
 	pd := ProofData{
-		Headers: headers,
+		Headers: header,
 		ReceiptProof: ReceiptProof{
 			TxReceipt: *receipt,
 			KeyIndex:  ek,
@@ -133,7 +138,7 @@ func AssembleProof(headers []BlockHeader, log types.Log, fId constant.ChainId, r
 		},
 	}
 
-	input, err := constant.Matic.Methods[constant.MethodOfGetBytes].Inputs.Pack(pd)
+	input, err := constant.Bsc.Methods[constant.MethodOfGetBytes].Inputs.Pack(pd)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +147,5 @@ func AssembleProof(headers []BlockHeader, log types.Log, fId constant.ChainId, r
 	if err != nil {
 		return nil, err
 	}
-
 	return pack, nil
 }

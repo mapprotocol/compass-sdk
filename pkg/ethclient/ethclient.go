@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum"
+	"github.com/mapprotocol/compass-sdk/pkg/platon"
 	"math/big"
 	"net/http"
 	"strings"
@@ -630,11 +631,11 @@ func (ec *Client) EthLatestHeaderByNumber(endpoint string, number *big.Int) (*He
 	return &head, err
 }
 
-//func (ec *Client) PlatonGetBlockByNumber(ctx context.Context, number *big.Int) (*platon.Header, error) {
-//	var head *platon.Header
-//	err := ec.c.CallContext(ctx, &head, "eth_getBlockByNumber", toBlockNumArg(number), false)
-//	if err == nil && head == nil {
-//		err = ethereum.NotFound
-//	}
-//	return head, err
-//}
+func (ec *Client) PlatonGetBlockByNumber(ctx context.Context, number *big.Int) (*platon.Header, error) {
+	var head *platon.Header
+	err := ec.c.CallContext(ctx, &head, "eth_getBlockByNumber", toBlockNumArg(number), false)
+	if err == nil && head == nil {
+		err = ethereum.NotFound
+	}
+	return head, err
+}
